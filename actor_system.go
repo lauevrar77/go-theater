@@ -2,6 +2,7 @@ package theater
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"log"
 	"sync"
 )
@@ -52,7 +53,7 @@ func (as *ActorSystem) removeDeadActor(actorRef ActorRef) {
 func (as *ActorSystem) ByRef(ref ActorRef) (*Mailbox, error) {
 	mailbox, ok := as.actors[ref]
 	if !ok {
-		return nil, fmt.Errorf("Actor not found")
+		return nil, fmt.Errorf("Actor %v not found", ref)
 	}
 	return &mailbox, nil
 }
@@ -63,6 +64,22 @@ func (as *ActorSystem) Run() {
 	as.actorsWaitGroup.Wait()
 	close(as.deadActorsQueue)
 	as.cleanerWaitGroup.Wait()
+}
+
+func (as *ActorSystem) Call(target *ActorRef, msg Message) (*Message, error) {
+	resultChan := make(chan Message, 1)
+	syncerName := fmt.Sprintf("syncer-%s-%s", string(*target), uuid.New().String())
+	syncer := NewSyncerActor(target, msg, resultChan)
+	_, err := as.Spawn(
+		ActorRef(syncerName),
+		syncer,
+		1,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result := <-resultChan
+	return &result, nil
 }
 
 func cleanDeadActors(deadActorsQueue chan ActorRef, actorSystem *ActorSystem) {
