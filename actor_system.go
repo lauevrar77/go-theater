@@ -11,6 +11,7 @@ type ActorSystem struct {
 	actorsWaitGroup  sync.WaitGroup
 	cleanerWaitGroup sync.WaitGroup
 	deadActorsQueue  chan ActorRef
+	lock             sync.Mutex
 }
 
 func NewActorSystem() ActorSystem {
@@ -23,23 +24,29 @@ func NewActorSystem() ActorSystem {
 }
 
 func (as *ActorSystem) Spawn(ref ActorRef, behavior ActorBehavior, mailboxSize int) (*Mailbox, error) {
+	as.lock.Lock()
 	if _, ok := as.actors[ref]; ok {
 		return nil, fmt.Errorf("Actor already exists")
 	}
 	mailbox := make(Mailbox, mailboxSize)
 	as.actors[ref] = mailbox
+	as.lock.Unlock()
+
 	behavior.Initialize(&ref, &mailbox, as)
-	as.actorsWaitGroup.Add(1)
 	actor := Actor{Me: ref, Mailbox: &mailbox, Behavior: behavior, DeadQueue: as.deadActorsQueue}
 	go actor.Run(&as.actorsWaitGroup)
+	as.actorsWaitGroup.Add(1)
 	return &mailbox, nil
 }
 
 func (as *ActorSystem) removeDeadActor(actorRef ActorRef) {
-	if _, ok := as.actors[actorRef]; ok {
+	as.lock.Lock()
+	if mailbox, ok := as.actors[actorRef]; ok {
+		close(mailbox)
 		delete(as.actors, actorRef)
 		log.Printf("[ActorSystem] Removed dead actor %v", actorRef)
 	}
+	as.lock.Unlock()
 }
 
 func (as *ActorSystem) ByRef(ref ActorRef) (*Mailbox, error) {

@@ -1,8 +1,3 @@
-# Go Theater
-This is an implementation of an actor system in Golang
-
-## Example usage
-```go
 package main
 
 import (
@@ -88,4 +83,3 @@ func main() {
 	}
 	system.Run()
 }
-```
