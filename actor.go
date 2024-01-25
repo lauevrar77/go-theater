@@ -3,12 +3,15 @@ package theater
 import "sync"
 
 type Actor struct {
-	Mailbox  *Mailbox
-	Behavior ActorBehavior
+	Me        ActorRef
+	Mailbox   *Mailbox
+	Behavior  ActorBehavior
+	DeadQueue chan ActorRef
 }
 
 func (a *Actor) Run(wg *sync.WaitGroup) {
 	a.Behavior.Run()
+	a.DeadQueue <- a.Me
 	wg.Done()
 }
 
