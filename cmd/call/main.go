@@ -16,52 +16,47 @@ type ComputedTime struct {
 }
 
 type TimeGiver struct {
-	me      *theater.ActorRef
-	mailbox *theater.Mailbox
-	system  *theater.ActorSystem
+	me            *theater.ActorRef
+	mailbox       *theater.Mailbox
+	system        *theater.ActorSystem
+	dispatcher    theater.MessageDispatcher
+	shoudContinue bool
 }
 
 func (tp *TimeGiver) Initialize(me *theater.ActorRef, mailbox *theater.Mailbox, system *theater.ActorSystem) {
 	tp.me = me
 	tp.mailbox = mailbox
 	tp.system = system
+	tp.dispatcher = theater.NewMessageDispatcher(mailbox, system)
+
+	tp.dispatcher.RegisterMessageHandler("ComputeTime", tp.PrintTime)
+	tp.dispatcher.RegisterRequestMessageHandler("ComputeTime", tp.ReturnTime)
+	tp.dispatcher.RegisterDefaultHandler(tp.Quit)
+}
+
+func (tp *TimeGiver) PrintTime(payload interface{}) {
+	msg := payload.(ComputeTime)
+	fmt.Println(tp.computeTime(msg.dur))
+}
+
+func (tp *TimeGiver) ReturnTime(payload interface{}) theater.Message {
+	msg := payload.(ComputeTime)
+	return theater.Message{
+		Type: "ComputedTime",
+		Content: ComputedTime{
+			time: tp.computeTime(msg.dur),
+		},
+	}
+}
+
+func (tp *TimeGiver) Quit(payload interface{}) {
+	tp.shoudContinue = false
 }
 
 func (tp *TimeGiver) Run() {
-	shouldContinue := true
-	for shouldContinue {
-		msg := <-*tp.mailbox
-		switch msg.Type {
-		case "RequestMessage":
-			reqContent := msg.Content.(theater.RequestMessage)
-			switch reqContent.Type {
-			case "ComputeTime":
-				content := reqContent.Content.(ComputeTime)
-				computed := tp.computeTime(content.dur)
-				mailbox, err := tp.system.ByRef(reqContent.RespondTo)
-				if err != nil {
-					fmt.Printf("Error: %v\n", err)
-				}
-				*mailbox <- theater.Message{
-					Type: "ComputedTime",
-					Content: ComputedTime{
-						time: computed,
-					},
-				}
-				break
-			default:
-				fmt.Println("Unknown message type")
-				break
-			}
-			break
-		case "ComputeTime":
-			content := msg.Content.(ComputeTime)
-			fmt.Println(tp.computeTime(content.dur))
-			break
-		case "Quit":
-			fmt.Println("Quitting")
-			shouldContinue = false
-		}
+	tp.shoudContinue = true
+	for tp.shoudContinue {
+		tp.dispatcher.Receive()
 	}
 }
 
@@ -88,6 +83,13 @@ func main() {
 	}()
 	wg.Add(1)
 
+	*mailbox <- theater.Message{
+		Type: "ComputeTime",
+		Content: ComputeTime{
+			dur: 1 * time.Second,
+		},
+	}
+
 	responseMsg, err := system.Call(&giverRef, theater.Message{
 		Type: "ComputeTime",
 		Content: ComputeTime{
@@ -99,7 +101,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println(responseMsg)
+	fmt.Println(responseMsg.Content.(ComputedTime).time)
 
 	*mailbox <- theater.Message{
 		Type:    "Quit",
