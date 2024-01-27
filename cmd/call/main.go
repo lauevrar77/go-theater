@@ -16,18 +16,16 @@ type ComputedTime struct {
 }
 
 type TimeGiver struct {
-	me            *theater.ActorRef
-	mailbox       *theater.Mailbox
+	me            theater.ActorRef
 	system        *theater.ActorSystem
 	dispatcher    theater.MessageDispatcher
 	shoudContinue bool
 }
 
-func (tp *TimeGiver) Initialize(me *theater.ActorRef, mailbox *theater.Mailbox, system *theater.ActorSystem) {
+func (tp *TimeGiver) Initialize(me theater.ActorRef, dispatcher theater.MessageDispatcher, system *theater.ActorSystem) {
 	tp.me = me
-	tp.mailbox = mailbox
 	tp.system = system
-	tp.dispatcher = theater.NewMessageDispatcher(mailbox, system)
+	tp.dispatcher = dispatcher
 
 	tp.dispatcher.RegisterMessageHandler("ComputeTime", tp.PrintTime)
 	tp.dispatcher.RegisterRequestMessageHandler("ComputeTime", tp.ReturnTime)
@@ -49,7 +47,7 @@ func (tp *TimeGiver) ReturnTime(payload interface{}) theater.Message {
 	}
 }
 
-func (tp *TimeGiver) Quit(payload interface{}) {
+func (tp *TimeGiver) Quit(msg theater.Message) {
 	tp.shoudContinue = false
 }
 
@@ -68,13 +66,12 @@ func main() {
 	giver := TimeGiver{}
 	giverRef := theater.ActorRef("time-giver")
 	system := theater.NewActorSystem()
+	dispatcher := theater.NewMessageDispatcher(nil, &system)
 
 	_, err := system.Spawn(giverRef, &giver, 10)
 	if err != nil {
 		panic(err)
 	}
-
-	mailbox, _ := system.ByRef(giverRef)
 
 	wg := sync.WaitGroup{}
 	go func() {
@@ -83,12 +80,15 @@ func main() {
 	}()
 	wg.Add(1)
 
-	*mailbox <- theater.Message{
-		Type: "ComputeTime",
-		Content: ComputeTime{
-			dur: 1 * time.Second,
+	dispatcher.Send(
+		giverRef,
+		theater.Message{
+			Type: "ComputeTime",
+			Content: ComputeTime{
+				dur: 1 * time.Second,
+			},
 		},
-	}
+	)
 
 	responseMsg, err := system.Call(&giverRef, theater.Message{
 		Type: "ComputeTime",
@@ -103,10 +103,12 @@ func main() {
 
 	fmt.Println(responseMsg.Content.(ComputedTime).time)
 
-	*mailbox <- theater.Message{
-		Type:    "Quit",
-		Content: nil,
-	}
+	dispatcher.Send(
+		giverRef,
+		theater.Message{
+			Type:    "Quit",
+			Content: nil,
+		},
+	)
 	wg.Wait()
-
 }

@@ -1,9 +1,9 @@
 package theater
 
 type SyncerActor struct {
-	me      *ActorRef
-	mailbox *Mailbox
-	system  *ActorSystem
+	me         ActorRef
+	dispatcher MessageDispatcher
+	system     *ActorSystem
 
 	target     *ActorRef
 	resultChan chan Message
@@ -18,26 +18,31 @@ func NewSyncerActor(target *ActorRef, msg Message, resultChan chan Message) *Syn
 	}
 }
 
-func (sa *SyncerActor) Initialize(me *ActorRef, mailbox *Mailbox, system *ActorSystem) {
+func (sa *SyncerActor) Initialize(me ActorRef, dispatcher MessageDispatcher, system *ActorSystem) {
+	dispatcher.RegisterDefaultHandler(sa.OnResponse)
+
 	sa.me = me
-	sa.mailbox = mailbox
+	sa.dispatcher = dispatcher
 	sa.system = system
 }
 
+func (sa *SyncerActor) OnResponse(message Message) {
+	sa.resultChan <- message
+	close(sa.resultChan)
+}
+
 func (sa *SyncerActor) Run() {
-	targetMailbox, err := sa.system.ByRef(*sa.target)
-	if err != nil {
-		return
-	}
-	*targetMailbox <- Message{
+	err := sa.dispatcher.Send(*sa.target, Message{
 		Type: "RequestMessage",
 		Content: RequestMessage{
 			Type:      sa.msg.Type,
 			Content:   sa.msg.Content,
-			RespondTo: *sa.me,
+			RespondTo: sa.me,
 		},
+	})
+	if err != nil {
+		return
 	}
-	result := <-*sa.mailbox
-	sa.resultChan <- result
-	close(sa.resultChan)
+
+	sa.dispatcher.Receive()
 }

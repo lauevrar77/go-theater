@@ -7,67 +7,73 @@ import (
 )
 
 type TimeTicker struct {
-	me      *theater.ActorRef
-	mailbox *theater.Mailbox
-	system  *theater.ActorSystem
-	target  *theater.ActorRef
+	me         theater.ActorRef
+	dispatcher theater.MessageDispatcher
+	system     *theater.ActorSystem
+
+	target theater.ActorRef
+	run    bool
 }
 
-func NewTimtTicker(target *theater.ActorRef) *TimeTicker {
+func NewTimtTicker(target theater.ActorRef) *TimeTicker {
 	return &TimeTicker{
 		target: target,
+		run:    true,
 	}
 }
 
-func (tt *TimeTicker) Initialize(me *theater.ActorRef, mailbox *theater.Mailbox, system *theater.ActorSystem) {
+func (tt *TimeTicker) Initialize(me theater.ActorRef, dispatcher theater.MessageDispatcher, system *theater.ActorSystem) {
+	dispatcher.RegisterDefaultHandler(tt.Quit)
+
 	tt.me = me
-	tt.mailbox = mailbox
+	tt.dispatcher = dispatcher
 	tt.system = system
 }
 
+func (tt *TimeTicker) Quit(msg theater.Message) {
+	tt.run = false
+}
+
 func (tt *TimeTicker) Run() {
-	target, err := tt.system.ByRef(*tt.target)
-	if err != nil {
-		return
-	}
-	run := true
-	for run {
-		select {
-		case <-*tt.mailbox:
-			run = false
-		default:
-			time.Sleep(1 * time.Second)
-			*target <- theater.Message{}
-		}
+	for tt.run {
+		tt.dispatcher.Send(tt.target, theater.Message{})
+		time.Sleep(1 * time.Second)
+		tt.dispatcher.TryReceive()
 	}
 	fmt.Println("ticker quit")
 }
 
 type TimePrinter struct {
-	me      *theater.ActorRef
-	mailbox *theater.Mailbox
-	system  *theater.ActorSystem
+	me         theater.ActorRef
+	dispatcher theater.MessageDispatcher
+	system     *theater.ActorSystem
 }
 
-func (tp *TimePrinter) Initialize(me *theater.ActorRef, mailbox *theater.Mailbox, system *theater.ActorSystem) {
+func (tp *TimePrinter) Initialize(me theater.ActorRef, dispatcher theater.MessageDispatcher, system *theater.ActorSystem) {
+	dispatcher.RegisterDefaultHandler(tp.OnMessage)
+
 	tp.me = me
-	tp.mailbox = mailbox
+	tp.dispatcher = dispatcher
 	tp.system = system
+}
+
+func (tp *TimePrinter) OnMessage(msg theater.Message) {
+	fmt.Println(msg)
 }
 
 func (tp *TimePrinter) Run() {
 	ticker := NewTimtTicker(tp.me)
-	tickerMailbox, err := tp.system.Spawn("time-ticker", ticker, 10)
+	_, err := tp.system.Spawn("time-ticker", ticker, 10)
 	if err != nil {
 		return
 	}
+
 	cpt := 0
 	for {
-		msg := <-*tp.mailbox
-		fmt.Println(msg)
+		tp.dispatcher.Receive()
 		cpt += 1
 		if cpt == 10 {
-			*tickerMailbox <- theater.Message{}
+			tp.dispatcher.Send(theater.ActorRef("time-ticker"), theater.Message{})
 			break
 		}
 	}

@@ -33,8 +33,9 @@ func (as *ActorSystem) Spawn(ref ActorRef, behavior ActorBehavior, mailboxSize i
 	as.actors[ref] = mailbox
 	as.lock.Unlock()
 
-	behavior.Initialize(&ref, &mailbox, as)
-	actor := Actor{Me: ref, Mailbox: &mailbox, Behavior: behavior, DeadQueue: as.deadActorsQueue}
+	dispatcher := NewMessageDispatcher(&mailbox, as)
+	behavior.Initialize(ref, dispatcher, as)
+	actor := Actor{Me: ref, Behavior: behavior, DeadQueue: as.deadActorsQueue}
 	go actor.Run(&as.actorsWaitGroup)
 	as.actorsWaitGroup.Add(1)
 	return &mailbox, nil
