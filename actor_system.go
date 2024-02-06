@@ -50,7 +50,9 @@ func (as *ActorSystem) removeDeadActor(actorRef ActorRef) {
 }
 
 func (as *ActorSystem) ByRef(ref ActorRef) (*Mailbox, error) {
+	as.lock.Lock()
 	mailbox, ok := as.actors[ref]
+	as.lock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("Actor %v not found", ref)
 	}
